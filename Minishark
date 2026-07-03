@@ -1,0 +1,88 @@
+import psutil; import threading; import queue;from datetime import datetime; import json; import socket; import sys; from concurrent.futures import ThreadPoolExecutor; from concurrent.futures import ThreadPoolExecutor, as_completed; import time; import ssl
+
+packet_queue = queue.Queue()
+captpack = queue.Queue()
+detect = socket.if_nameindex()
+analyze_pack = queue.Queue()
+choices = []
+for i, name in detect:
+    choices.append(name)
+    print(f"{i}.{name}")
+    
+try:
+    chosen = int(input(f"Choose an interface\npick a number from 1-{len(detect)}: "))-1
+except:
+    print(f"pick a number from 1-{len(detect)}: ")
+
+def capture():
+    sock =  socket.socket(
+    socket.AF_PACKET,
+    socket.SOCK_RAW,
+    socket.ntohs(0x0003),
+    )
+    sock.bind((choices[chosen], 0))
+    while True:
+        packet = sock.recv(65535)
+        packet_queue.put(packet)
+
+def identify():
+    temp = ""
+    i = 0
+    packet_info = {
+            "header": "",
+            "packtype": "",
+            "raw": "",
+            "ascii": "",
+            "length": 0,
+        }
+    while True:
+        packet = packet_queue.get()
+        packet_info["length"] = len(packet)
+        protocol = packet[23]
+        for bytes in packet:
+            if 32 <= bytes <= 126:
+                parsed = chr(bytes)
+            else:
+                parsed = "."
+            temp += parsed 
+            
+        if len(packet) == len(temp):
+            packet_info["ascii"] = temp
+            
+        if packet[12:14] == b'\x08\x00':
+                packet_info["header"] = "IPv4"
+                if protocol == 6:
+                    packet_info["packtype"] = "TCP"
+                elif protocol == 17:
+                    packet_info["packtype"] = "UDP"
+                elif protocol == 1:
+                    packet_info["packtype"] = "ICMP"
+                    
+        elif packet[12:14] == b'\x86\xDD':
+                packet_info["header"] = "IPv6"
+        elif packet[12:14] == b'\x08\x06':
+                packet_info["header"] = "ARP"
+        temp = ""
+
+def tcp_parse():
+    
+    
+    
+def extract():
+    i = 0
+    while True:
+        results = captp.get()
+        print(f"({i}){results["ascii"].replace(".", "")}")
+        i+=1
+    
+exthread = threading.Thread(target=extract)
+capthread = threading.Thread(target=capture)
+identhread = threading.Thread(target=identify)
+
+capthread.start()
+identhread.start()
+exthread.start()
+
+capthread.join()
+identhread.join()
+exthread.join()
