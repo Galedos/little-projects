@@ -1,9 +1,12 @@
 import psutil; import threading; import queue;from datetime import datetime; import json; import socket; import sys; from concurrent.futures import ThreadPoolExecutor; from concurrent.futures import ThreadPoolExecutor, as_completed; import time; import ssl
 
 packet_queue = queue.Queue()
-captpack = queue.Queue()
 detect = socket.if_nameindex()
 analyze_pack = queue.Queue()
+tcppack = queue.Queue()
+udppack = queue.Queue()
+icmppack = queue.Queue()
+arphead = queue.Queue()
 choices = []
 for i, name in detect:
     choices.append(name)
@@ -38,6 +41,7 @@ def identify():
     while True:
         packet = packet_queue.get()
         packet_info["length"] = len(packet)
+        packet_info["raw"] = packet
         protocol = packet[23]
         for bytes in packet:
             if 32 <= bytes <= 126:
@@ -53,17 +57,80 @@ def identify():
                 packet_info["header"] = "IPv4"
                 if protocol == 6:
                     packet_info["packtype"] = "TCP"
+                    tcppack.put(packet_info)
                 elif protocol == 17:
                     packet_info["packtype"] = "UDP"
+                    udppack.put(packet_info)
                 elif protocol == 1:
                     packet_info["packtype"] = "ICMP"
+                    icmppack.put(packet_info)
                     
         elif packet[12:14] == b'\x86\xDD':
                 packet_info["header"] = "IPv6"
+                print("ipv6")
         elif packet[12:14] == b'\x08\x06':
                 packet_info["header"] = "ARP"
+                arphead.put(packet_info)
         temp = ""
 
+def arp_parse():
+    while True:
+        packet_info = arphead.get()
+        bytes = packet_info["raw"]
+        packet_info["arp"] = {
+        "hardware_type": int.from_bytes(bytes[14:16], "big"),
+        "protocol_type": int.from_bytes(bytes[16:18], "big"),
+
+        "hardware_length": bytes[18],
+        "protocol_length": bytes[19],
+
+        "operation": int.from_bytes(bytes[20:22], "big"),
+
+        "sender_mac": bytes[22:28],
+        "sender_ip": bytes[28:32],
+
+        "target_mac": bytes[32:38],
+        "target_ip": bytes[38:42],
+}
+        hwt = packet_info["arp"]["hardware_type"]
+        pt = packet_info["arp"]["protocol_type"]
+        hl = packet_info["arp"]["hardware_length"]
+        pl = packet_info["arp"]["protocol_length"]
+        op = packet_info["arp"]["operation"]
+        
+        match hwt:
+            case 1:
+                hwt = "Ethernet"
+            case 6:
+                hwt = "IEE 802 Network"
+            case 15:
+                hwt = "Frame Relay"
+            case 16:
+                hwt = "ATM"
+                
+        match pt:
+            case 0x0800:
+                pt = "IPv4"
+            case 0x86DD:
+                pt = "IPv6"
+            case _:
+                pt = f"Unknown ({hex(pt)})"
+                
+        match hl:
+            case 6:
+                hl = "6 Bytes (MAC Address)"
+            case _:
+                hl = f"{hl} Bytes"
+                
+        match pl:
+            case 4:
+                pl = "4 Bytes (IPv4)"
+            case 16:
+                pl = "16 Bytes (IPv6)"
+            case _:
+                pl = f"{pl} Bytes"
+    
+    
 def tcp_parse():
     
     
@@ -71,7 +138,6 @@ def tcp_parse():
 def extract():
     i = 0
     while True:
-        results = captp.get()
         print(f"({i}){results["ascii"].replace(".", "")}")
         i+=1
     
