@@ -8,9 +8,13 @@ udppack = queue.Queue()
 icmppack = queue.Queue()
 arphead = queue.Queue()
 choices = []
-for i, name in detect:
+resultz = queue.Queue()
+print(detect)
+i=1
+for x, name in detect:
     choices.append(name)
     print(f"{i}.{name}")
+    i+=1
     
 try:
     chosen = int(input(f"Choose an interface\npick a number from 1-{len(detect)}: "))-1
@@ -30,34 +34,59 @@ def capture():
 
 def identify():
     temp = ""
+    charss = []
     i = 0
-    packet_info = {
+    while True:
+        packet_info = {
+            "link": {
+                "host": None,
+                "start": 12,
+            },
             "header": "",
             "packtype": "",
             "raw": "",
             "ascii": "",
             "length": 0,
         }
-    while True:
         packet = packet_queue.get()
         packet_info["length"] = len(packet)
         packet_info["raw"] = packet
-        protocol = packet[23]
-        for bytes in packet:
-            if 32 <= bytes <= 126:
-                parsed = chr(bytes)
-            else:
-                parsed = "."
-            temp += parsed 
+        ASCII_TABLE = [
+            chr(y) if 32 <= y <= 126 else "."
+            for y in range(256) 
+        ]
+        chars = [ASCII_TABLE[b] for b in packet_info["raw"]]
+        temp = "".join(chars)
             
         if len(packet) == len(temp):
             packet_info["ascii"] = temp
+            #print("temp sent")
+            #print(f"header: {packet[12:14]}")
+            #print(packet[12:14])
             
-        if packet[12:14] == b'\x08\x00':
+        version = packet[0] >> 4
+        if version == 4:
+            packet_info["header"] = "IPv4"
+        elif version == 6:
+            packet_info["header"] = "IPv6"
+            #print(packet[0])
+        else:
+            continue
+        
+        packet_info["link"]["host"] = "tun"
+        packet_info["link"]["start"] = 0
+        #print("tun detected")
+            
+        start = packet_info["link"]["start"]
+        protocol = packet[start+9]
+        #print(protocol)
+        if packet[start] >> 4 == 4:
                 packet_info["header"] = "IPv4"
+                #print(f"header: {packet[12:14]}")
                 if protocol == 6:
                     packet_info["packtype"] = "TCP"
                     tcppack.put(packet_info)
+                    print("tcp ident sent")
                 elif protocol == 17:
                     packet_info["packtype"] = "UDP"
                     udppack.put(packet_info)
@@ -65,11 +94,12 @@ def identify():
                     packet_info["packtype"] = "ICMP"
                     icmppack.put(packet_info)
                     
-        elif packet[12:14] == b'\x86\xDD':
+        elif packet[start:start+2] == b'\x86\xDD':
                 packet_info["header"] = "IPv6"
                 print("ipv6")
-        elif packet[12:14] == b'\x08\x06':
+        elif packet[start:start+2] == b'\x08\x06':
                 packet_info["header"] = "ARP"
+                print("arp sent")
                 arphead.put(packet_info)
         temp = ""
 
@@ -77,14 +107,19 @@ def arp_parse():
     while True:
         packet_info = arphead.get()
         bytes = packet_info["raw"]
+        start = packet_info["link"]["start"]
         packet_info["arp"] = {
-        "hardware_type": int.from_bytes(bytes[14:16], "big"),
+        "hardware_type": int.from_bytes(bytes[start:16], "big"),
+        "hardware_name": "",
         "protocol_type": int.from_bytes(bytes[16:18], "big"),
+        "protocol_name": "",
 
         "hardware_length": bytes[18],
+        "hl": "",
         "protocol_length": bytes[19],
-
+        "pl": "",
         "operation": int.from_bytes(bytes[20:22], "big"),
+        "operation_done": "",
 
         "sender_mac": bytes[22:28],
         "sender_ip": bytes[28:32],
@@ -92,63 +127,101 @@ def arp_parse():
         "target_mac": bytes[32:38],
         "target_ip": bytes[38:42],
 }
-        hwt = packet_info["arp"]["hardware_type"]
-        pt = packet_info["arp"]["protocol_type"]
-        hl = packet_info["arp"]["hardware_length"]
-        pl = packet_info["arp"]["protocol_length"]
-        op = packet_info["arp"]["operation"]
-        
-        match hwt:
+        print("arp parse done")
+        match packet_info["arp"]["hardware_type"]:
             case 1:
-                hwt = "Ethernet"
+                packet_info["arp"]["hardware_name"] = "Ethernet"
             case 6:
-                hwt = "IEE 802 Network"
+                packet_info["arp"]["hardware_name"] = "IEE 802 Network"
             case 15:
-                hwt = "Frame Relay"
+                packet_info["arp"]["hardware_name"] = "Frame Relay"
             case 16:
-                hwt = "ATM"
+                packet_info["arp"]["hardware_name"] = "ATM"
                 
-        match pt:
+        match packet_info["arp"]["protocol_type"]:
             case 0x0800:
-                pt = "IPv4"
+                packet_info["arp"]["protocol_name"] = "IPv4"
             case 0x86DD:
-                pt = "IPv6"
+                packet_info["arp"]["protocol_name"] = "IPv6"
             case _:
-                pt = f"Unknown ({hex(pt)})"
+                packet_info["arp"]["protocol_name"] = f"Unknown ({hex(packet_info["arp"]["protocol_type"])})"
                 
-        match hl:
+        match packet_info["arp"]["hardware_length"]:
             case 6:
-                hl = "6 Bytes (MAC Address)"
+                packet_info["arp"]["hl"] = "6 Bytes (MAC Address)"
             case _:
-                hl = f"{hl} Bytes"
+                packet_info["arp"]["hl"] = f"{packet_info["arp"]["hardware_length"]} Bytes"
                 
-        match pl:
+        match packet_info["arp"]["protocol_length"]:
             case 4:
-                pl = "4 Bytes (IPv4)"
+                packet_info["arp"]["pl"] = "4 Bytes (IPv4)"
             case 16:
-                pl = "16 Bytes (IPv6)"
+                packet_info["arp"]["pl"] = "16 Bytes (IPv6)"
             case _:
-                pl = f"{pl} Bytes"
+                packet_info["arp"]["pl"] = f"{packet_info["arp"]["protocol_length"]} Bytes"
+                
+        match packet_info["arp"]["operation"]:
+            case 1:
+                packet_info["arp"]["operation_done"] = "ARP Request"
+            case 2:
+                packet_info["arp"]["operation_done"] = "ARP Reply"
+        
+        #print("arp parse done")
+        resultz.put(packet_info)
     
     
 def tcp_parse():
-    
-    
+    while True:
+        #print("tcp parsing")
+        packet = tcppack.get()
+        print([packet])
+        bytes = packet["raw"]
+        start = packet["link"]["start"]
+        ihl = bytes[start] & 0x0F
+        ipv4hl = ihl * 4
+        tcpstart = start + ipv4hl
+        packet["tcp"] = {
+            "src_port": int.from_bytes(bytes[tcpstart:tcpstart+2], "big"),
+            "dst_port": int.from_bytes(bytes[tcpstart+2:tcpstart+4], "big"),
+            "sequence": int.from_bytes(bytes[tcpstart+4:tcpstart+8], "big"),
+            "acknowledgement": int.from_bytes(bytes[tcpstart+8:tcpstart+12], "big"),
+            # Byte 12 (upper 4 bits)
+            "header_length": ((bytes[tcpstart+12] >> 4) & 0x0F) * 4,
+            "flags": bytes[tcpstart+13],
+            "window_size": int.from_bytes(bytes[tcpstart+14:tcpstart+16], "big"),
+            "checksum": int.from_bytes(bytes[tcpstart+16:tcpstart+18], "big"),
+            "urgent_pointer": int.from_bytes(bytes[tcpstart+18:tcpstart+20], "big"),
+        }
+        src = packet["tcp"]["src_port"]; dst = packet["tcp"]["dst_port"]
+        seq = packet["tcp"]["sequence"]; ack = packet["tcp"]["acknowledgement"]
+        hl = packet["tcp"]["header_length"]; fl = packet["tcp"]["flags"]
+        ws = packet["tcp"]["window_size"]; urgp = packet["tcp"]["urgent_pointer"]
+        
+        resultz.put(packet)
+        print(packet["tcp"])
+        #print("tcp parse done")
     
 def extract():
     i = 0
     while True:
-        print(f"({i}){results["ascii"].replace(".", "")}")
+        results = resultz.get()
+        #print(f"({i}){results["ascii"].replace(".", "")}")
         i+=1
     
-exthread = threading.Thread(target=extract)
-capthread = threading.Thread(target=capture)
-identhread = threading.Thread(target=identify)
+exthread = threading.Thread(target=extract); capthread = threading.Thread(target=capture)
+identhread = threading.Thread(target=identify); arpthread = threading.Thread(target=arp_parse)
+tcpthread = threading.Thread(target=tcp_parse)
 
 capthread.start()
 identhread.start()
 exthread.start()
+arpthread.start()
+tcpthread.start()
+
+
 
 capthread.join()
 identhread.join()
 exthread.join()
+arpthread.join()
+tcpthread.join()
