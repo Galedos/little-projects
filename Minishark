@@ -164,7 +164,6 @@ def tcp_parse():
     while True:
         #print("tcp parsing")
         packet = tcppack.get()
-        print("tcp parsing")
         bytes = packet["raw"]
         start = packet["link"]["start"]
         ihl = bytes[start] & 0x0F
@@ -196,7 +195,8 @@ def extract():
     i = 0
     while True:
         results = resultz.get()
-        #print(results)
+        print(results)
+        print("------------------------------------")
         #print(f"({i}){results["ascii"].replace(".", "")}")
         i+=1
     
