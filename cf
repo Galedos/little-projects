@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+from pwn import *; import sys
+args = sys.argv
+arg_len = len(args)
+if arg_len <= 1:
+    print("cf -h for help")
+    sys.exit()
+#some does nothing for now | currently not needed yet
+options = {
+    "-c": 100,      
+    "-d": False,    
+    "-f": None,     
+    "-x": False,    
+    "-o": None,     
+    "-h": False,
+    "--b": "little"
+}
+
+if "-h" in args:
+    print('''
+cf - pwntools cyclic wrapper
+
+Usage:
+    cf [-c count] [-d]
+    cf -f <string|hex> [--b]
+
+Options:
+    -c <count>      Pattern length (default: 100)
+    -d              Print ASCII instead of raw bytes
+    -f <value>      Find cyclic offset
+    --b             Interpret hexadecimal input as big-endian
+    -h              Show help
+    ''')
+    sys.exit(0)
+if "-f" in args:  
+    if "--b" in args:
+        options["--b"] = "big"
+    if  args.index("-f") + 1 >= len(args):
+        print("-f requires a value.")
+        sys.exit(1)
+    value = args[args.index("-f") + 1]
+    if value.startswith("0x"):
+        try:
+            print(cyclic_find(int(value, 16), endian=options["--b"]))
+        except ValueError:
+            print("invalid hex value")
+            sys.exit(1)
+    else:
+        print(cyclic_find(value.encode(), endian=options["--b"]))
+    sys.exit(0)
+if "-d" in args:
+    options["-d"] = True
+
+if "-c" in args:
+    idx = args.index("-c")
+    if idx+1 < len(args) and not args[idx+1].startswith("-"):
+        try:
+            options["-c"] = int(args[idx+1])
+        except ValueError:
+            print("-c expects an int")
+            sys.exit(1)
+        raw = cyclic(options["-c"])
+        decoded = raw.decode()
+        if "-d" in args:
+            print(decoded)
+        elif "-d" not in args:
+            print(raw)
+    else:
+        print(cyclic(options["-c"]))
+
+    

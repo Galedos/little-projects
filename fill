@@ -1,0 +1,70 @@
+#!/usr/bin/env python3
+import sys
+import traceback
+
+argv = sys.argv.copy()
+from pwn import *
+
+value = argv[2]
+
+if "-p" in argv:
+    value = int(argv[2], 0)
+    try:
+        idx = argv.index("-p") + 1
+
+        match int(argv[idx]):
+            case 8:
+                val = p8(value)
+            case 16:
+                val = p16(value)
+            case 32:
+                val = p32(value)
+            case 64:
+                val = p64(value)
+            case _:
+                print("Supported sizes: 8, 16, 32, 64")
+                sys.exit(1)
+
+    except (ValueError, IndexError):
+        print("Usage: -p <8|16|32|64>")
+        sys.exit(1)
+
+else:
+    val = argv[2].encode()
+
+if "-c" in argv:
+    try:
+        count = int(argv[argv.index("-c") + 1])
+    except (ValueError, IndexError):
+        print("-c expects an integer")
+        sys.exit(1)
+else:
+    count = 1
+
+try:
+    offset = int(argv[1])
+
+    if "{i}" in argv and value.startswith("%"):
+        idx = argv.index("{i}")
+        if idx + 1 >= len(argv) or argv[idx + 1].startswith("-"):
+            x = 1
+        else:
+            try:
+                x = int(argv[idx + 1])
+            except ValueError:
+                print("{i} expects an integer")
+                sys.exit(1)
+
+        for i in range(count):
+            payload = (f"%{x + i}${value[1:]} ").encode()
+            sys.stdout.buffer.write(b"A" * offset + payload + b" ")
+
+    else:
+        for _ in range(count):
+            sys.stdout.buffer.write(b"A" * offset + val + b" ")
+
+    sys.exit()
+
+except ValueError:
+    print("Structure:\nprint {offset} {value} ...")
+    sys.exit(1)
